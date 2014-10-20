@@ -103,4 +103,4 @@ before_script:
 
 script:
 
-  - php scripts/run-tests.sh --php /home/travis/.phpenv/shims/php Opigno
+  - php scripts/run-tests.sh --php /home/travis/.phpenv/shims/php --verbose Opigno
