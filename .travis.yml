@@ -1,7 +1,10 @@
 language: php
+sudo: false
 
 php:
   - 5.4
+  - 5.5
+  - 5.6
 
 mysql:
   database: drupal
@@ -10,6 +13,10 @@ mysql:
 
 env:
   - UPGRADE=none
+  - UPGRADE=7.x-1.19
+  - UPGRADE=7.x-1.18
+  - UPGRADE=7.x-1.17
+  - UPGRADE=7.x-1.16
   - UPGRADE=7.x-1.15
   - UPGRADE=7.x-1.14
   - UPGRADE=7.x-1.13
@@ -30,24 +37,34 @@ env:
 matrix:
   fast_finish: true
 
+# Cache Composer & Drush directories.
+cache:
+  directories:
+    - $HOME/.composer/cache
+    - $HOME/.drush/cache
+
 install:
-  - sudo apt-get update > /dev/null
   - "mysql -e 'create database drupal;'"
 
   # Install latest Drush 6.
+  - travis_retry composer self-update && composer --version
+  - travis_retry composer global require "drush/drush:6.*"
   - export PATH="$HOME/.composer/vendor/bin:$PATH"
-  - composer global require --no-interaction --prefer-source drush/drush:6.*
+
+  # Drupal.org verify tool
   - drush dl -y drupalorg_drush-7.x-1.x-dev --destination=$HOME/.drush
   - drush cc drush
 
   # Build Behat dependencies
   - cd ./tests/behat
-  - composer install --no-interaction --prefer-source
+  - travis_retry composer install --prefer-dist --no-interaction
   - cd ../../../
 
   # Setting Behat environment
-  - DISTRO=`echo $TRAVIS_BUILD_DIR | sed -e "s/\/[^\/]*$//"`
-  - export BEHAT_PARAMS="extensions[Drupal\\DrupalExtension\\Extension][drupal][drupal_root]=$DISTRO/drupal"
+  - BUILD_TOP=`dirname $TRAVIS_BUILD_DIR`
+  - BEHAT_PARAMS='{"extensions":{"Drupal\\DrupalExtension":{"drupal":{"drupal_root":"BUILD_TOP/drupal"}}}}'
+  - BEHAT_PARAMS=`echo $BEHAT_PARAMS | sed -e s#BUILD_TOP#$BUILD_TOP#`
+  - export BEHAT_PARAMS
 
   # Build Codebase
   - mkdir private_files
@@ -59,18 +76,20 @@ install:
   # Build the current branch
   - cd drupal
   - drush make --yes profiles/opigno_lms/drupal-org-core.make --prepare-install
-  - drush make --yes profiles/opigno_lms/drupal-org.make --no-core --contrib-destination=profiles/opigno_lms
+  - drush make --yes profiles/opigno_lms/drupal-org.make --no-core --contrib-destination=profiles/commerce_kickstart
+  # Download Diff module for checking overridden features through Drush.
+  - drush dl diff
   - cd ../
+
 
   # Verify that all the .make files will work on Drupal.org.
   - drush verify-makefile drupal/profiles/opigno_lms/drupal-org.make
-#  - find drupal/profiles/opigno_lms/modules -name \*.make -print0 | xargs -0 -n1 drush verify-makefile
 
   # Download an old version to test upgrading from.
   - if [[ "$UPGRADE" != none ]]; then drush dl opigno_lms-$UPGRADE; fi
 
   # Setup files
-  - sudo chmod -R 777 drupal/sites/all
+  - chmod -R 777 drupal/sites/all
 
   # Setup display for Selenium
   - export DISPLAY=:99.0
@@ -80,10 +99,25 @@ install:
   # Get Selenium
   - wget http://selenium-release.storage.googleapis.com/2.42/selenium-server-standalone-2.42.1.jar
   - java -jar selenium-server-standalone-2.42.1.jar > /dev/null 2>&1 &
-  - until netstat -an 2>/dev/null | grep '4444.*LISTEN'; do true; done
+  - nc -zvv localhost 4444; out=$?; while [[ $out -ne 0 ]]; do echo "Retry hit port 4444..."; nc -zvv localhost 4444; out=$?; sleep 5; done
 
    # Disable sendmail
   - echo sendmail_path=`which true` >> ~/.phpenv/versions/$(phpenv version-name)/etc/php.ini
+
+  # Increase the MySQL connection timeout on the PHP end.
+  - echo "mysql.connect_timeout=3000" >> ~/.phpenv/versions/$(phpenv version-name)/etc/php.ini
+  - echo "default_socket_timeout=3000" >> ~/.phpenv/versions/$(phpenv version-name)/etc/php.ini
+
+  # Increase the MySQL server timetout and packet size.
+  - mysql -e "SET GLOBAL wait_timeout = 36000;"
+  - mysql -e "SET GLOBAL max_allowed_packet = 33554432;"
+
+  # Enable APC
+  - |
+    if [[ $TRAVIS_PHP_VERSION < "5.5" ]]; then
+      echo "extension=apc.so" >> ~/.phpenv/versions/$(phpenv version-name)/etc/php.ini
+      echo "apc.shm_size=256M" >> ~/.phpenv/versions/$(phpenv version-name)/etc/php.ini
+    fi
 
 before_script:
 
@@ -99,7 +133,7 @@ before_script:
 
   # Start server
   - drush runserver --server=builtin 8888 > /dev/null 2>&1 &
-  - until netstat -an 2>/dev/null | grep '8888.*LISTEN'; do true; done
+  - nc -zvv localhost 8888; out=$?; while [[ $out -ne 0 ]]; do echo "Retry hit port 8888..."; nc -zvv localhost 8888; out=$?; sleep 5; done
 
 script:
 
