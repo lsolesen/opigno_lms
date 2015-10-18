@@ -55,17 +55,6 @@ install:
   - drush dl -y drupalorg_drush-7.x-1.x-dev --destination=$HOME/.drush
   - drush cc drush
 
-  # Build Behat dependencies
-  - cd ./tests/behat
-  - travis_retry composer install --prefer-dist --no-interaction
-  - cd ../../../
-
-  # Setting Behat environment
-  - BUILD_TOP=`dirname $TRAVIS_BUILD_DIR`
-  - BEHAT_PARAMS='{"extensions":{"Drupal\\DrupalExtension":{"drupal":{"drupal_root":"BUILD_TOP/drupal"}}}}'
-  - BEHAT_PARAMS=`echo $BEHAT_PARAMS | sed -e s#BUILD_TOP#$BUILD_TOP#`
-  - export BEHAT_PARAMS
-
   # Build Codebase
   - mkdir private_files
   - mkdir profiles
