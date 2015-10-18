@@ -55,6 +55,9 @@ install:
   - drush dl -y drupalorg_drush-7.x-1.x-dev --destination=$HOME/.drush
   - drush cc drush
 
+  # Getting in the right place
+  - cd ../
+
   # Build Codebase
   - mkdir private_files
   - mkdir profiles
